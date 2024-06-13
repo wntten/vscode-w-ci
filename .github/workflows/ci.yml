@@ -1,18 +1,17 @@
 name: CI
 
+#on: workflow_dispatch
+
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
   pull_request:
-    branches:
-      - main
+    branches: [ "main" ]
 
 jobs:
   windows:
     name: Windows
     runs-on: windows-2022
-    timeout-minutes: 60
     env:
       CHILD_CONCURRENCY: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -23,39 +22,45 @@ jobs:
         with:
           node-version-file: .nvmrc
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v4
         with:
-          python-version: "3.8"
-
+          python-version: "3.11.7"
+          
       - name: Compute node modules cache key
         id: nodeModulesCacheKey
         run: echo "value=$(node build/azure-pipelines/common/computeNodeModulesCacheKey.js)" >> $GITHUB_OUTPUT
+      
       - name: Cache node_modules archive
         id: cacheNodeModules
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         with:
           path: ".build/node_modules_cache"
           key: "${{ runner.os }}-cacheNodeModulesArchive-${{ steps.nodeModulesCacheKey.outputs.value }}"
+          
       - name: Extract node_modules archive
         if: ${{ steps.cacheNodeModules.outputs.cache-hit == 'true' }}
         run: 7z.exe x .build/node_modules_cache/cache.7z -aos
+        
       - name: Get yarn cache directory path
         id: yarnCacheDirPath
         if: ${{ steps.cacheNodeModules.outputs.cache-hit != 'true' }}
         run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
+        
       - name: Cache yarn directory
         if: ${{ steps.cacheNodeModules.outputs.cache-hit != 'true' }}
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         with:
           path: ${{ steps.yarnCacheDirPath.outputs.dir }}
           key: ${{ runner.os }}-yarnCacheDir-${{ steps.nodeModulesCacheKey.outputs.value }}
           restore-keys: ${{ runner.os }}-yarnCacheDir-
+          
       - name: Execute yarn
         if: ${{ steps.cacheNodeModules.outputs.cache-hit != 'true' }}
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
         run: yarn --frozen-lockfile --network-timeout 180000
+        
       - name: Create node_modules archive
         if: ${{ steps.cacheNodeModules.outputs.cache-hit != 'true' }}
         run: |
@@ -64,21 +69,26 @@ jobs:
           mkdir -Force .build/node_modules_cache
           7z.exe a .build/node_modules_cache/cache.7z -mx3 `@.build/node_modules_list.txt
 
-      - name: Compilation
-        run: yarn vscode-win32-x64
-      - name: Compile Inno Updater
-        run: yarn vscode-win32-x64-inno-updater
-      - name: Compile System setup
-        run: yarn vscode-win32-x64-system-setup
-      - name: Compile User setup
-        run: yarn vscode-win32-x64-user-setup
-      - name: Upload system setup artifact
-        uses: actions/upload-artifact@v4.3.3
+      - name: Compile
+        run: yarn gulp vscode-win32-x64
+
+      - name: Use Inno Updater Task
+        run: yarn gulp vscode-win32-x64-inno-updater
+
+      - name: Package for System
+        run: yarn gulp vscode-win32-x64-system-setup
+        
+      - name: Package for User
+        run: yarn gulp vscode-win32-x64-user-setup
+
+      - name: Upload System setup artifact
+        uses: actions/upload-artifact@v4.0.0
         with:
-          name: vscode-win32-x64-system-setup
+          name: VSCode-win32-x64-SysInst
           path: .build/win32-x64/system-setup
-      - name: Upload user setup artifact
-        uses: actions/upload-artifact@v4.3.3
+          
+      - name: Upload User setup artifact
+        uses: actions/upload-artifact@v4.0.0
         with:
-          name: vscode-win32-x64-user-setup
+          name: VSCode-win32-x64-UsrInst
           path: .build/win32-x64/user-setup
